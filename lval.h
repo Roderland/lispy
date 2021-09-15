@@ -29,12 +29,19 @@ struct lval {
     long num;
     char* err;
     char* sym;
-    lbuildtin fun;
+
+    lbuildtin buildtin;
+
+    lenv* env;
+    lval* formals;
+    lval* body;
+
     int count;
     struct lval** cell;
 };
 
 struct lenv {
+    lenv* par;
     int count;
     char** syms;
     lval** vals;
@@ -83,4 +90,13 @@ void lenv_put(lenv* e, lval* k, lval* v);
 
 void lenv_add_buildtin(lenv* e, char* name, lbuildtin func);
 void lenv_add_buildtins(lenv* e);
+
+lval* buildtin_def(lenv* e, lval* a);
+lval* buildtin_put(lenv* e, lval* a);
+lval* buildtin_var(lenv* e, lval* a, char* func);
+lval* lval_call(lenv* e, lval* f, lval* a);
+lval* lval_lambda(lval* formals, lval* body);
+lval* buildtin_lambda(lenv* e, lval* a);
+lenv* lenv_copy(lenv* e);
+void lenv_def(lenv* e, lval* k, lval* v);
 
