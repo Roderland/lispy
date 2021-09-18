@@ -26,6 +26,7 @@ char* ltype_name(int t) {
     case LVAL_FUN: return "Function";
     case LVAL_NUM: return "Number";
     case LVAL_ERR: return "Error";
+    case LVAL_STR: return "String";
     case LVAL_SYM: return "Symbol";
     case LVAL_SEXPR: return "S-Expression";
     case LVAL_QEXPR: return "Q-Expression";
@@ -104,6 +105,9 @@ void lval_del(lval* v) {
         case LVAL_ERR:
             free(v->err);
             break;
+        case LVAL_STR:
+            free(v->str);
+            break;
         case LVAL_SYM:
             free(v->sym);
             break;
@@ -135,6 +139,7 @@ lval* lval_read(mpc_ast_t* t) {
 
     if (strstr(t->tag, "number")) { return lval_read_num(t); }
     if (strstr(t->tag, "symbol")) { return lval_sym(t->contents); }
+    if (strstr(t->tag, "string")) { return lval_read_str(t); }
 
     lval* x = NULL;
     if (strcmp(t->tag, ">") == 0) { x = lval_sexpr(); }
@@ -147,6 +152,7 @@ lval* lval_read(mpc_ast_t* t) {
         if (strcmp(t->children[i]->contents, "{") == 0) { continue; }
         if (strcmp(t->children[i]->contents, "}") == 0) { continue; }
         if (strcmp(t->children[i]->tag,  "regex") == 0) { continue; }
+        if (strstr(t->children[i]->tag,  "comment")) { continue; }
         x = lval_add(x, lval_read(t->children[i]));
     }
 
@@ -171,6 +177,7 @@ void lval_print(lval* v) {
         case LVAL_NUM:      printf("%li", v->num);           break;
         case LVAL_ERR:      printf("Error: %s", v->err);     break;
         case LVAL_SYM:      printf("%s", v->sym);            break;
+        case LVAL_STR:      lval_print_str(v);               break;
         case LVAL_SEXPR:    lval_expr_print(v, '(', ')');    break;
         case LVAL_QEXPR:    lval_expr_print(v, '{', '}');    break;
         case LVAL_FUN:      
@@ -270,6 +277,10 @@ lval* lval_copy(lval* v) {
         case LVAL_SYM:
             x->sym = malloc(sizeof(v->sym) + 1);
             strcpy(x->sym, v->sym);
+            break;
+        case LVAL_STR:
+            x->str = malloc(strlen(v->str) + 1);
+            strcpy(x->str, v->str);
             break;
         case LVAL_SEXPR:
         case LVAL_QEXPR:
@@ -445,6 +456,119 @@ lval* builtin_div(lenv* e, lval* a) {
   return buildtin_op(e, a, "/");
 }
 
+lval* buildtin_gt(lenv* e, lval* a) {
+    return buildtin_ord(e, a, ">");
+}
+
+lval* buildtin_lt(lenv* e, lval* a) {
+    return buildtin_ord(e, a, "<");
+}
+
+lval* buildtin_ge(lenv* e, lval* a) {
+    return buildtin_ord(e, a, ">=");
+}
+
+lval* buildtin_le(lenv* e, lval* a) {
+    return buildtin_ord(e, a, "<=");
+}
+
+lval* buildtin_eq(lenv* e, lval* a) {
+  return buildtin_cmp(e, a, "==");
+}
+
+lval* buildtin_ne(lenv* e, lval* a) {
+  return buildtin_cmp(e, a, "!=");
+}
+
+lval* buildtin_ord(lenv* e, lval* a, char* op) {
+    LASSERT_NUM(op, a, 2);
+    LASSERT_TYPE(op, a, 0, LVAL_NUM);
+    LASSERT_TYPE(op, a, 1, LVAL_NUM);
+
+    int r;
+    if (strcmp(op, ">") == 0) {
+        r = (a->cell[0]->num > a->cell[1]->num);
+    }
+
+    if (strcmp(op, "<") == 0) {
+        r = (a->cell[0]->num < a->cell[1]->num);
+    }
+
+    if (strcmp(op, ">=") == 0) {
+        r = (a->cell[0]->num >= a->cell[1]->num);
+    }
+
+    if (strcmp(op, "<=") == 0) {
+        r = (a->cell[0]->num <= a->cell[1]->num);
+    }
+
+    lval_del(a);
+    return lval_num(r);
+}
+
+int lval_eq(lval* x, lval* y) {
+    if (x->type != y->type) { return 0; }
+
+    switch (x->type) {
+        case LVAL_NUM: return x->num == y->num;
+        case LVAL_ERR: return (strcmp(x->err, y->err) == 0);
+        case LVAL_SYM: return (strcmp(x->sym, y->sym) == 0);
+        case LVAL_STR: return (strcmp(x->str, y->str) == 0);
+        case LVAL_FUN: 
+            if (x->buildtin || y->buildtin) {
+                return x->buildtin == y->buildtin;
+            } else {
+                return lval_eq(x->formals, y->formals) 
+                    && lval_eq(x->body, y->body);
+            }
+        case LVAL_QEXPR:
+        case LVAL_SEXPR:
+            if (x->count != y->count) { return 0; }
+            for (int i = 0; i < x->count; i++) {
+                if (!lval_eq(x->cell[i], y->cell[i])) {
+                    return 0;
+                }
+            }
+            return 1;
+    }
+    return 0;
+}
+
+lval* buildtin_cmp(lenv* e, lval* a, char* op) {
+    LASSERT_NUM(op, a, 2);
+    int r;
+    if (strcmp(op, "==") == 0) {
+        r = lval_eq(a->cell[0], a->cell[1]);
+    }
+
+    if (strcmp(op, "!=") == 0) {
+        r = !lval_eq(a->cell[0], a->cell[1]);
+    }
+
+    lval_del(a);
+    return lval_num(r);
+}
+
+lval* buildtin_if(lenv* e, lval* a) {
+    LASSERT_NUM("if", a, 3);
+    LASSERT_TYPE("if", a, 0, LVAL_NUM);
+    LASSERT_TYPE("if", a, 1, LVAL_QEXPR);
+    LASSERT_TYPE("if", a, 2, LVAL_QEXPR);
+
+    lval* x;
+    a->cell[1]->type = LVAL_SEXPR;
+    a->cell[2]->type = LVAL_SEXPR;
+
+    if (a->cell[0]->num) {
+        x = lval_eval(e, lval_pop(a, 1));
+    } else {
+        x = lval_eval(e, lval_pop(a, 2));
+    }
+
+    lval_del(a);
+    return x;
+}
+
 lenv* lenv_new(void) {
     lenv* e = malloc(sizeof(lenv));
     e->par = NULL;
@@ -526,6 +650,19 @@ void lenv_add_buildtins(lenv* e) {
     lenv_add_buildtin(e, "def", buildtin_def);
     lenv_add_buildtin(e, "=",   buildtin_put);
     lenv_add_buildtin(e, "\\", buildtin_lambda);
+
+    lenv_add_buildtin(e, "if", buildtin_if);
+    lenv_add_buildtin(e, "==", buildtin_eq);
+    lenv_add_buildtin(e, "!=", buildtin_ne);
+    lenv_add_buildtin(e, ">",  buildtin_gt);
+    lenv_add_buildtin(e, "<",  buildtin_lt);
+    lenv_add_buildtin(e, ">=", buildtin_ge);
+    lenv_add_buildtin(e, "<=", buildtin_le);
+
+    /* string function */
+    lenv_add_buildtin(e, "load",  buildtin_load);
+    lenv_add_buildtin(e, "error", buildtin_error);
+    lenv_add_buildtin(e, "print", buildtin_print);
 }
 
 lval* buildtin_def(lenv* e, lval* a) {
@@ -649,4 +786,82 @@ void lenv_def(lenv* e, lval* k, lval* v) {
         e = e->par;
     }
     lenv_put(e, k, v);
+}
+
+lval* lval_str(char* s) {
+    lval* v = malloc(sizeof(lval));
+    v->type = LVAL_STR;
+    v->str = malloc(strlen(s) + 1);
+    strcpy(v->str, s);
+    return v;
+}
+
+void lval_print_str(lval* v) {
+    char* tmp = malloc(strlen(v->str) + 1);
+    strcpy(tmp, v->str);
+    tmp = mpcf_escape(tmp);
+    printf("\"%s\"", tmp);
+    free(tmp);
+}
+
+lval* lval_read_str(mpc_ast_t* t) {
+    t->contents[strlen(t->contents) - 1] = '\0';
+    char* tmp = malloc(strlen(t->contents + 1) + 1);
+    strcpy(tmp, t->contents + 1);
+    tmp = mpcf_unescape(tmp);
+    lval* str = lval_str(tmp);
+    free(tmp);
+    return str;
+}
+
+lval* buildtin_load(lenv* e, lval* a) {
+    LASSERT_NUM("load", a, 1);
+    LASSERT_TYPE("load", a, 0, LVAL_STR);
+
+    mpc_result_t r;
+    if (mpc_parse_contents(a->cell[0]->str, Lispy, &r)) {
+        lval* expr = lval_read(r.output);
+        mpc_ast_delete(r.output);
+
+        while (expr->count) {
+            lval* x = lval_eval(e, lval_pop(expr, 0));
+            if (x->type == LVAL_ERR) { lval_println(x); }
+            lval_del(x);
+        }
+
+        lval_del(expr);
+        lval_del(a);
+
+        return lval_sexpr();
+    } else {
+        char* err_msg = mpc_err_string(r.error);
+        mpc_err_delete(r.error);
+
+        lval* err = lval_err("Could not load Library %s", err_msg);
+        free(err_msg);
+        lval_del(a);
+
+        return err;
+    }
+
+}
+
+lval* buildtin_print(lenv* e, lval* a) {
+    for (int i = 0; i < a->count; i++) {
+        lval_print(a->cell[i]);
+        putchar(' ');
+    }
+    putchar('\n');
+    lval_del(a);
+    return lval_sexpr();
+}
+
+lval* buildtin_error(lenv* e, lval* a) {
+    LASSERT_NUM("error", a, 1);
+    LASSERT_TYPE("error", a, 0, LVAL_STR);
+
+    lval* err = lval_err(a->cell[0]->str);
+
+    lval_del(a);
+    return err;
 }

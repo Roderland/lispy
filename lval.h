@@ -2,10 +2,20 @@
 
 #include "mpc.h"
 
+mpc_parser_t* Number;
+mpc_parser_t* Symbol;
+mpc_parser_t* String;
+mpc_parser_t* Comment;
+mpc_parser_t* Sexpr;
+mpc_parser_t* Qexpr;
+mpc_parser_t* Expr;
+mpc_parser_t* Lispy;
+
 enum {
     LVAL_ERR,
     LVAL_NUM,
     LVAL_SYM,
+    LVAL_STR,
     LVAL_FUN,
     LVAL_SEXPR,
     LVAL_QEXPR,
@@ -29,6 +39,7 @@ struct lval {
     long num;
     char* err;
     char* sym;
+    char* str;
 
     lbuildtin buildtin;
 
@@ -100,3 +111,36 @@ lval* buildtin_lambda(lenv* e, lval* a);
 lenv* lenv_copy(lenv* e);
 void lenv_def(lenv* e, lval* k, lval* v);
 
+lval* buildtin_gt(lenv* e, lval* a);
+
+lval* buildtin_lt(lenv* e, lval* a);
+
+lval* buildtin_ge(lenv* e, lval* a);
+
+lval* buildtin_le(lenv* e, lval* a);
+
+lval* buildtin_eq(lenv* e, lval* a);
+
+lval* buildtin_ne(lenv* e, lval* a);
+
+lval* buildtin_ord(lenv* e, lval* a, char* op);
+
+int lval_eq(lval* x, lval* y);
+
+lval* buildtin_cmp(lenv* e, lval* a, char* op);
+
+lval* buildtin_if(lenv* e, lval* a);
+
+lval* lval_str(char* s);
+
+lval* lval_add(lval* v, lval* x);
+
+void lval_print_str(lval* v);
+
+lval* lval_read_str(mpc_ast_t* t);
+
+lval* buildtin_load(lenv* e, lval* a);
+
+lval* buildtin_print(lenv* e, lval* a);
+
+lval* buildtin_error(lenv* e, lval* a);
