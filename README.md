@@ -1,4 +1,3 @@
 # lispy
 
-Build Your Own Lisp
-https://buildyourownlisp.com/
+My implementation of Lisp from the book ==> https://buildyourownlisp.com/
